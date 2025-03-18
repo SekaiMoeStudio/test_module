@@ -15,11 +15,11 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: set up JDK 11
+    - name: set up JDK
       uses: actions/setup-java@v4
       with:
-        java-version: '11'
-        distribution: 'temurin'
+        java-version: '21'
+        distribution: 'zulu'
         cache: gradle
 
     - name: Grant execute permission for gradlew
