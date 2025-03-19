@@ -1,3 +1,6 @@
 [submodule "module/src/main/cpp/external/libcxx"]
 	path = module/src/main/cpp/external/libcxx
 	url = https://github.com/topjohnwu/libcxx
+[submodule "module/src/main/cpp/external/rapidjson"]
+	path = module/src/main/cpp/external/rapidjson
+	url = https://github.com/Tencent/rapidjson

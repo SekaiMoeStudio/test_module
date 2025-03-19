@@ -1,113 +1,137 @@
-#include <iostream>
+#include <android/log.h>
 #include <cstdlib>
 #include <unistd.h>
 #include <string>
-#include <fstream>
 #include <vector>
 
 #include <rapidjson/document.h>
-#include <rapidjson/istreamwrapper.h>
+#include <rapidjson/filereadstream.h>
 
-using namespace std;
+#define LOG_TAG "IrisHelper"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-static const string IRIS_PATH = "/odm/bin/irisConfig";
+static const char* IRIS_PATH = "/odm/bin/irisConfig";
 static const int SLEEP_DURATION = 6;
 static const int MAX_COUNTER = 8;
 
-rapidjson::Document readJson(const string& file_path) {
-    string read_path = file_path + "/iris_config.json";
-    cout << ">>> Read Config: " << read_path << endl;
+bool readJson(const std::string& file_path, rapidjson::Document& doc) {
+    std::string read_path = file_path + "/iris_config.json";
+    LOGI("Read Config: %s", read_path.c_str());
 
-    ifstream ifs(read_path);
-    if (!ifs.is_open()) {
-        cerr << ">>> Could not open " << read_path << endl;
-        exit(EXIT_FAILURE);
+    FILE* fp = fopen(read_path.c_str(), "rb");
+    if (!fp) {
+        LOGE("Could not open %s", read_path.c_str());
+        return false;
     }
-    rapidjson::IStreamWrapper isw(ifs);
-    rapidjson::Document doc;
-    doc.ParseStream(isw);
-    ifs.close();
+
+    char readBuffer[65536];
+    rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+    doc.ParseStream(is);
+    fclose(fp);
 
     if (doc.HasParseError()) {
-        cerr << ">>> Error parsing JSON file " << read_path << endl;
-        exit(EXIT_FAILURE);
+        LOGE("Error parsing JSON file %s", read_path.c_str());
+        return false;
     }
 
-    return doc;
+    return true;
 }
 
-int executeCmd(const string& cmd, string& result) {
+bool executeCmd(const std::string& cmd, std::string& result) {
     char buffer[128];
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) {
-        perror("popen failed");
-        return -1;
+        LOGE("popen failed for command: %s", cmd.c_str());
+        return false;
     }
 
+    result.clear();
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         result += buffer;
     }
     pclose(pipe);
 
-    if (!result.empty() && result.back() == '\n') {
+    // Remove trailing newline if present
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
         result.pop_back();
     }
 
-    return 0;
+    return true;
 }
 
-void processPackage(rapidjson::Document& document, const string& pkg_name) {
-    if (!document.HasMember(pkg_name.c_str())) return;
-    const auto& pkg_configs = document[pkg_name.c_str()];
+void processPackage(const rapidjson::Document& document, const char* pkg_name) {
+    if (!document.HasMember(pkg_name)) return;
+    
+    const auto& pkg_configs = document[pkg_name];
+    if (!pkg_configs.IsArray()) {
+        LOGE("Invalid config format for package %s", pkg_name);
+        return;
+    }
+
     for (rapidjson::SizeType i = 0; i < pkg_configs.Size(); ++i) {
-        string pkg_config = pkg_configs[i].GetString();
-        string cmd_str = IRIS_PATH + " " + pkg_config;
-        system(cmd_str.c_str());
+        if (!pkg_configs[i].IsString()) continue;
+        
+        std::string cmd_str = IRIS_PATH;
+        cmd_str += " ";
+        cmd_str += pkg_configs[i].GetString();
+        
+        if (system(cmd_str.c_str()) != 0) {
+            LOGE("Failed to execute command: %s", cmd_str.c_str());
+        }
     }
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <config_path>" << endl;
+        LOGE("Usage: %s <config_path>", argv[0]);
         return EXIT_FAILURE;
     }
 
-    rapidjson::Document document = readJson(argv[1]);
-    cout << ">>> Iris_helper server launching..." << endl;
+    rapidjson::Document document;
+    if (!readJson(argv[1], document)) {
+        return EXIT_FAILURE;
+    }
+
+    LOGI("Iris_helper server launching...");
     sleep(2);
 
-    string current_app;
-    string cmd_result;
+    std::string current_app;
+    std::string cmd_result;
     int counter = 0;
 
+    const char* dump_cmd = "dumpsys activity a | grep topResumedActivity= | tail -n 1 | cut -d '/' -f1 | cut -d ' ' -f7";
+
     while (true) {
-        cmd_result.clear();
-        if (executeCmd("dumpsys activity a | grep topResumedActivity= | tail -n 1 | cut -d '/' -f1 | cut -d ' ' -f7", cmd_result) != 0) {
+        if (!executeCmd(dump_cmd, cmd_result)) {
+            sleep(1);
             continue;
         }
 
         if (cmd_result != current_app) {
             if (!document.HasMember(cmd_result.c_str())) {
                 counter++;
-                cout << "\n>>> Current app: " << cmd_result << ".\n>> Standing by until " << MAX_COUNTER - counter << " times app-switch after." << endl;
+                LOGI("Current app: %s.\nStanding by until %d times app-switch after.",
+                     cmd_result.c_str(), MAX_COUNTER - counter);
                 processPackage(document, "off");
             } else {
-                cout << "\n>>> Current app: " << cmd_result << ".\n>>> Starting MEMC for " << cmd_result << "..." << endl;
-                processPackage(document, cmd_result);
+                LOGI("Current app: %s.\nStarting MEMC for %s...",
+                     cmd_result.c_str(), cmd_result.c_str());
+                processPackage(document, cmd_result.c_str());
                 counter = 0;
             }
             current_app = cmd_result;
         } else {
-            cout << ">> Not app switch, sleeping..." << endl;
+            LOGI("Not app switch, sleeping...");
         }
 
         if (counter >= MAX_COUNTER) {
             processPackage(document, "off");
-            cout << ">> Long time no working, see you next time!" << endl;
+            LOGI("Long time no working, see you next time!");
             break;
         }
         sleep(SLEEP_DURATION);
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
