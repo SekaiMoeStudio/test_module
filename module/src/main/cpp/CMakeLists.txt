@@ -6,9 +6,6 @@ if(NOT DEFINED MODULE_NAME)
     set(MODULE_NAME ${PROJECT_NAME})
 endif()
 
-<<<<<<< HEAD
-set(CXX_FLAGS "${CXX_FLAGS} -fno-exceptions -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden -flto=auto -pipe -O3")
-=======
 # Define compile flags
 set(CXX_FLAGS
     -fno-exceptions
@@ -24,7 +21,6 @@ set(CXX_FLAGS
     -D_LIBCPP_NO_RTTI
     -D_LIBCPP_BUILDING_LIBRARY
 )
->>>>>>> 976a64b (fix)
 
 # Define linker flags
 set(LINKER_FLAGS
@@ -41,13 +37,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${LINKER_FLAGS}")
 set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${LINKER_FLAGS}")
 
-<<<<<<< HEAD
-add_library(${MODULE_NAME} SHARED main.cpp)
-target_link_libraries(${MODULE_NAME} cxx log)
-
-=======
 # Add external subdirectory first to ensure dependencies are built
->>>>>>> 976a64b (fix)
 add_subdirectory(external)
 
 # Create the shared library
